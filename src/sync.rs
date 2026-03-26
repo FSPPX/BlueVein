@@ -1,6 +1,6 @@
 use crate::bluetooth::{BluetoothDevice, BluetoothManager, CsrkKey};
 use crate::config::BlueVeinConfig;
-use crate::efi;
+use crate::efi::{self, EfiContext};
 use crate::log;
 use std::collections::HashMap;
 use std::error::Error;
@@ -8,12 +8,22 @@ use std::error::Error;
 /// Synchronization manager
 pub struct SyncManager {
     bt_manager: Box<dyn BluetoothManager>,
+    efi_context: EfiContext,
 }
 
 impl SyncManager {
     /// Create a new sync manager
-    pub fn new(bt_manager: Box<dyn BluetoothManager>) -> Self {
-        Self { bt_manager }
+    pub fn new(bt_manager: Box<dyn BluetoothManager>, efi_context: EfiContext) -> Self {
+        Self { bt_manager, efi_context }
+    }
+
+    /// Create a new sync manager with default EFI device
+    #[allow(dead_code)]
+    pub fn with_default_efi(bt_manager: Box<dyn BluetoothManager>) -> Self {
+        Self {
+            bt_manager,
+            efi_context: EfiContext::default(),
+        }
     }
 
     /// Compare two devices to see if their keys differ
@@ -100,10 +110,10 @@ impl SyncManager {
     ///      * If it's NOT in EFI → ADD to EFI (new pairing on this OS)
     /// 4. Write updated bluevein.json back to EFI
     pub fn sync_bidirectional(&mut self) -> Result<(), Box<dyn Error>> {
-        log!("[BlueVein] Starting bidirectional synchronization...");
+        log!("[BlueVein] Starting bidirectional synchronization (EFI device: {})...", self.efi_context.device);
 
         // Read config from EFI (may not exist)
-        let efi_config = match efi::read_config() {
+        let efi_config = match efi::read_config_with_device(Some(&self.efi_context.device)) {
             Ok(config) => {
                 log!("[BlueVein] Found existing EFI config");
                 Some(config)
@@ -241,8 +251,8 @@ impl SyncManager {
         };
 
         // Write merged config back to EFI
-        match efi::write_config(&final_config) {
-            Ok(_) => log!("[BlueVein] Successfully wrote merged config to EFI"),
+        match efi::write_config_with_device(&final_config, Some(&self.efi_context.device)) {
+            Ok(_) => log!("[BlueVein] Successfully wrote merged config to EFI (device: {})", self.efi_context.device),
             Err(e) => {
                 log!("[BlueVein] Error writing config to EFI: {}", e);
                 return Err(Box::new(e));
@@ -260,7 +270,7 @@ impl SyncManager {
         log!("[BlueVein] Starting synchronization from EFI...");
 
         // Read config from EFI
-        let config = match efi::read_config() {
+        let config = match efi::read_config_with_device(Some(&self.efi_context.device)) {
             Ok(config) => config,
             Err(efi::EfiError::NotFound) => {
                 log!("[BlueVein] No existing config found on EFI, will create on first change");
@@ -305,7 +315,7 @@ impl SyncManager {
         log!("[BlueVein] Syncing current state to EFI...");
 
         // Read existing config from EFI (or create empty)
-        let mut config = match efi::read_config() {
+        let mut config = match efi::read_config_with_device(Some(&self.efi_context.device)) {
             Ok(config) => config,
             Err(efi::EfiError::NotFound) => BlueVeinConfig::new(),
             Err(e) => return Err(Box::new(e)),
@@ -335,8 +345,8 @@ impl SyncManager {
         }
 
         // Write config to EFI
-        efi::write_config(&config)?;
-        log!("[BlueVein] Successfully synced to EFI");
+        efi::write_config_with_device(&config, Some(&self.efi_context.device))?;
+        log!("[BlueVein] Successfully synced to EFI (device: {})", self.efi_context.device);
 
         Ok(())
     }
@@ -366,7 +376,7 @@ impl SyncManager {
 
         log!("[BlueVein] Reading existing EFI config...");
         // Read existing config
-        let mut config = match efi::read_config() {
+        let mut config = match efi::read_config_with_device(Some(&self.efi_context.device)) {
             Ok(config) => {
                 log!("[BlueVein] Found existing EFI config");
                 config
@@ -392,15 +402,16 @@ impl SyncManager {
 
         log!("[BlueVein] Writing updated config to EFI...");
         // Write back to EFI
-        match efi::write_config(&config) {
+        match efi::write_config_with_device(&config, Some(&self.efi_context.device)) {
             Ok(_) => {
                 log!(
-                    "[BlueVein] ✓ Successfully updated EFI config for device {}",
-                    device_mac
+                    "[BlueVein] ✓ Successfully updated EFI config for device {} (device: {})",
+                    device_mac,
+                    self.efi_context.device
                 );
 
                 // Verify write
-                if let Ok(verify_config) = efi::read_config() {
+                if let Ok(verify_config) = efi::read_config_with_device(Some(&self.efi_context.device)) {
                     if let Some(stored_device) = verify_config.get_device(adapter_mac, &device.mac_address) {
                         log!(
                             "[BlueVein] ✓ Verified: Device {} is in EFI config",
@@ -456,7 +467,7 @@ impl SyncManager {
     #[allow(dead_code)]
     pub fn check_efi_changes(&mut self) -> Result<(), Box<dyn Error>> {
         // Read config from EFI
-        let config = match efi::read_config() {
+        let config = match efi::read_config_with_device(Some(&self.efi_context.device)) {
             Ok(config) => config,
             Err(efi::EfiError::NotFound) => {
                 return Ok(());

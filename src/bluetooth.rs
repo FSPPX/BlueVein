@@ -33,6 +33,7 @@ pub struct CsrkKey {
 }
 
 impl CsrkKey {
+    #[allow(dead_code)]
     pub fn new(key: String) -> Self {
         Self {
             key,
@@ -74,6 +75,7 @@ fn default_link_key_type() -> u8 {
 }
 
 impl ClassicKeys {
+    #[allow(dead_code)]
     pub fn new(link_key: String) -> Self {
         Self {
             link_key,
@@ -95,6 +97,7 @@ pub struct BluetoothDevice {
 
 impl BluetoothDevice {
     /// Create a classic Bluetooth device
+    #[allow(dead_code)]
     pub fn classic(mac_address: String, link_key: String) -> Self {
         Self {
             mac_address,
@@ -104,6 +107,7 @@ impl BluetoothDevice {
     }
 
     /// Create a BLE device with LTK
+    #[allow(dead_code)]
     pub fn le_with_ltk(mac_address: String, ltk: LeLongTermKey) -> Self {
         Self {
             mac_address,

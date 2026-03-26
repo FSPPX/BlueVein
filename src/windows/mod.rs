@@ -2,8 +2,10 @@ mod bluetooth;
 mod monitor;
 mod service;
 
+use crate::efi::EfiContext;
 use crate::log;
 use crate::sync::SyncManager;
+use std::env;
 use std::error::Error;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -46,7 +48,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
 pub fn run_sync_loop() -> Result<(), Box<dyn Error>> {
     let bt_manager = Box::new(bluetooth::WindowsBluetoothManager::new()?);
-    let mut sync_manager = SyncManager::new(bt_manager);
+
+    // Get EFI device from environment variable
+    // If not specified, will try mounted EFI first, then fail
+    let efi_device = env::var("BLUEVEIN_EFI_DEVICE").ok();
+    let efi_context = EfiContext::new(efi_device.unwrap_or_default());
+
+    let mut sync_manager = SyncManager::new(bt_manager, efi_context);
 
     log!("[BlueVein] Performing initial bidirectional sync...");
     if let Err(e) = sync_manager.sync_bidirectional() {
@@ -88,7 +96,12 @@ fn periodic_efi_check(running: Arc<AtomicBool>) {
         }
     };
 
-    let mut sync_manager = SyncManager::new(Box::new(bt_manager));
+    // Get EFI device from environment variable
+    // If not specified, will try mounted EFI first, then fail
+    let efi_device = env::var("BLUEVEIN_EFI_DEVICE").ok();
+    let efi_context = EfiContext::new(efi_device.unwrap_or_default());
+
+    let mut sync_manager = SyncManager::new(Box::new(bt_manager), efi_context);
 
     while running.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_secs(30)); // Check every 30 seconds
