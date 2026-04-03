@@ -1,4 +1,4 @@
-use crate::bluetooth::windows_format_to_mac;
+use crate::bluetooth::{is_valid_mac_hex, windows_format_to_mac};
 use crate::log;
 use crate::sync::SyncManager;
 use std::collections::HashMap;
@@ -125,10 +125,7 @@ fn read_bluetooth_state() -> Result<BluetoothState, Box<dyn Error>> {
 
                 for value_result in adapter_subkey.enum_values() {
                     if let Ok((device_mac, value_data)) = value_result {
-                        // Skip special keys like "CentralIRK"
-                        if device_mac.len() == 12
-                            && device_mac.chars().all(|c| c.is_ascii_hexdigit())
-                        {
+                        if is_valid_mac_hex(&device_mac) {
                             devices.insert(device_mac, value_data.bytes);
                         }
                     }

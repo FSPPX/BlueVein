@@ -240,6 +240,13 @@ pub fn windows_format_to_mac(win_mac: &str) -> String {
     normalize_mac(win_mac)
 }
 
+/// Check if a string is a valid MAC address in raw hex format (12 hex characters, no separators).
+/// Used to filter out non-MAC registry values like "CentralIRK", "LocalIRK", etc.
+#[allow(dead_code)]
+pub fn is_valid_mac_hex(name: &str) -> bool {
+    name.len() == 12 && name.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +371,33 @@ mod tests {
         // Lowercase hex should be valid
         let key = "0123456789abcdef0123456789abcdef";
         assert!(validate_bluetooth_key(key, "TestKey").is_ok());
+    }
+
+    #[test]
+    fn test_is_valid_mac_hex_valid() {
+        assert!(is_valid_mac_hex("AABBCCDDEEFF"));
+        assert!(is_valid_mac_hex("aabbccddeeff"));
+        assert!(is_valid_mac_hex("98038E6A754D"));
+    }
+
+    #[test]
+    fn test_is_valid_mac_hex_rejects_special_keys() {
+        // These are real Windows registry value names that are NOT device MACs
+        assert!(!is_valid_mac_hex("CentralIRK"));
+        assert!(!is_valid_mac_hex("LocalIRK"));
+        assert!(!is_valid_mac_hex("MasterIRK"));
+    }
+
+    #[test]
+    fn test_is_valid_mac_hex_rejects_wrong_length() {
+        assert!(!is_valid_mac_hex("AABBCCDDEE"));     // 10 chars - too short
+        assert!(!is_valid_mac_hex("AABBCCDDEEFF00")); // 14 chars - too long
+        assert!(!is_valid_mac_hex(""));                // empty
+    }
+
+    #[test]
+    fn test_is_valid_mac_hex_rejects_non_hex() {
+        assert!(!is_valid_mac_hex("AABBCCDDEEGG")); // G is not hex
+        assert!(!is_valid_mac_hex("AA:BB:CC:DD:E")); // contains colons
     }
 }

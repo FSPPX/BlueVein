@@ -1,6 +1,7 @@
 use crate::bluetooth::{
-    mac_to_windows_format, normalize_mac, validate_bluetooth_key, windows_format_to_mac,
-    BluetoothDevice, BluetoothManager, ClassicKeys, CsrkKey, LeLongTermKey, LeKeys,
+    is_valid_mac_hex, mac_to_windows_format, normalize_mac, validate_bluetooth_key,
+    windows_format_to_mac, BluetoothDevice, BluetoothManager, ClassicKeys, CsrkKey,
+    LeLongTermKey, LeKeys,
 };
 use crate::log;
 use std::error::Error;
@@ -429,6 +430,9 @@ impl BluetoothManager for WindowsBluetoothManager {
         if let Ok(bt_keys) = self.open_bluetooth_keys() {
             for adapter in bt_keys.enum_keys() {
                 if let Ok(adapter_name) = adapter {
+                    if !is_valid_mac_hex(&adapter_name) {
+                        continue;
+                    }
                     let mac = windows_format_to_mac(&adapter_name);
                     if !adapters.contains(&mac) {
                         adapters.push(mac);
@@ -441,6 +445,9 @@ impl BluetoothManager for WindowsBluetoothManager {
         if let Ok(bt_le_keys) = self.open_bluetooth_le_keys() {
             for adapter in bt_le_keys.enum_keys() {
                 if let Ok(adapter_name) = adapter {
+                    if !is_valid_mac_hex(&adapter_name) {
+                        continue;
+                    }
                     let mac = windows_format_to_mac(&adapter_name);
                     if !adapters.contains(&mac) {
                         adapters.push(mac);
@@ -462,6 +469,10 @@ impl BluetoothManager for WindowsBluetoothManager {
             if let Ok(adapter_key) = bt_keys.open_subkey_with_flags(&adapter_key_name, KEY_READ) {
                 for device in adapter_key.enum_values() {
                     if let Ok((device_name, _)) = device {
+                        // Skip special registry values like "CentralIRK", "LocalIRK" etc.
+                        if !is_valid_mac_hex(&device_name) {
+                            continue;
+                        }
                         let device_mac = windows_format_to_mac(&device_name);
                         if let Ok(Some(classic)) = self.read_classic_device(adapter_mac, &device_mac)
                         {
