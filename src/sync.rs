@@ -14,7 +14,10 @@ pub struct SyncManager {
 impl SyncManager {
     /// Create a new sync manager
     pub fn new(bt_manager: Box<dyn BluetoothManager>, efi_context: EfiContext) -> Self {
-        Self { bt_manager, efi_context }
+        Self {
+            bt_manager,
+            efi_context,
+        }
     }
 
     /// Create a new sync manager with default EFI device
@@ -39,21 +42,27 @@ impl SyncManager {
 
     /// Merge two devices, combining keys from both sources
     /// This is important for dual-mode devices that have both Classic and LE keys
-    /// 
+    ///
     /// Special handling for CSRK Counter:
     /// - When merging CSRK keys with the same key value, takes MAX counter
     /// - This prevents counter rollback and protects against replay attacks
     /// - Critical because Windows doesn't persist Counter in registry
-    fn merge_devices(system_device: &BluetoothDevice, efi_device: &BluetoothDevice) -> BluetoothDevice {
+    fn merge_devices(
+        system_device: &BluetoothDevice,
+        efi_device: &BluetoothDevice,
+    ) -> BluetoothDevice {
         // Use base merge as foundation
         let mut merged = system_device.merge_with(efi_device);
-        
+
         // Smart CSRK Counter handling
         if let Some(ref mut merged_le) = merged.le {
             // Merge CSRK Local with MAX Counter preservation
             let csrk_local = match (
-                &system_device.le.as_ref().and_then(|le| le.csrk_local.as_ref()),
-                &efi_device.le.as_ref().and_then(|le| le.csrk_local.as_ref())
+                &system_device
+                    .le
+                    .as_ref()
+                    .and_then(|le| le.csrk_local.as_ref()),
+                &efi_device.le.as_ref().and_then(|le| le.csrk_local.as_ref()),
             ) {
                 (Some(sys_csrk), Some(efi_csrk)) if sys_csrk.key == efi_csrk.key => {
                     // Same key - take MAX Counter to prevent rollback
@@ -70,30 +79,32 @@ impl SyncManager {
                 (Some(csrk), None) | (None, Some(csrk)) => Some((*csrk).clone()),
                 (None, None) => None,
             };
-            
+
             // Merge CSRK Remote with MAX Counter preservation
             let csrk_remote = match (
-                &system_device.le.as_ref().and_then(|le| le.csrk_remote.as_ref()),
-                &efi_device.le.as_ref().and_then(|le| le.csrk_remote.as_ref())
+                &system_device
+                    .le
+                    .as_ref()
+                    .and_then(|le| le.csrk_remote.as_ref()),
+                &efi_device
+                    .le
+                    .as_ref()
+                    .and_then(|le| le.csrk_remote.as_ref()),
             ) {
-                (Some(sys_csrk), Some(efi_csrk)) if sys_csrk.key == efi_csrk.key => {
-                    Some(CsrkKey {
-                        key: sys_csrk.key.clone(),
-                        counter: sys_csrk.counter.max(efi_csrk.counter),
-                        authenticated: sys_csrk.authenticated || efi_csrk.authenticated,
-                    })
-                }
-                (Some(_sys_csrk), Some(efi_csrk)) => {
-                    Some((*efi_csrk).clone())
-                }
+                (Some(sys_csrk), Some(efi_csrk)) if sys_csrk.key == efi_csrk.key => Some(CsrkKey {
+                    key: sys_csrk.key.clone(),
+                    counter: sys_csrk.counter.max(efi_csrk.counter),
+                    authenticated: sys_csrk.authenticated || efi_csrk.authenticated,
+                }),
+                (Some(_sys_csrk), Some(efi_csrk)) => Some((*efi_csrk).clone()),
                 (Some(csrk), None) | (None, Some(csrk)) => Some((*csrk).clone()),
                 (None, None) => None,
             };
-            
+
             merged_le.csrk_local = csrk_local;
             merged_le.csrk_remote = csrk_remote;
         }
-        
+
         merged
     }
 
@@ -110,7 +121,10 @@ impl SyncManager {
     ///      * If it's NOT in EFI → ADD to EFI (new pairing on this OS)
     /// 4. Write updated bluevein.json back to EFI
     pub fn sync_bidirectional(&mut self) -> Result<(), Box<dyn Error>> {
-        log!("[BlueVein] Starting bidirectional synchronization (EFI device: {})...", self.efi_context.device);
+        log!(
+            "[BlueVein] Starting bidirectional synchronization (EFI device: {})...",
+            self.efi_context.display_name()
+        );
 
         // Read config from EFI (may not exist)
         let efi_config = match efi::read_config_with_device(Some(&self.efi_context.device)) {
@@ -180,7 +194,7 @@ impl SyncManager {
                                 // Device exists in both EFI and system
                                 // Merge to combine both Classic and LE keys if needed
                                 let merged = Self::merge_devices(system_device, efi_device);
-                                
+
                                 if Self::devices_differ(system_device, &merged) {
                                     // Keys differ or missing - update from merged result
                                     log!(
@@ -252,7 +266,10 @@ impl SyncManager {
 
         // Write merged config back to EFI
         match efi::write_config_with_device(&final_config, Some(&self.efi_context.device)) {
-            Ok(_) => log!("[BlueVein] Successfully wrote merged config to EFI (device: {})", self.efi_context.device),
+            Ok(_) => log!(
+                "[BlueVein] Successfully wrote merged config to EFI (device: {})",
+                self.efi_context.display_name()
+            ),
             Err(e) => {
                 log!("[BlueVein] Error writing config to EFI: {}", e);
                 return Err(Box::new(e));
@@ -346,7 +363,10 @@ impl SyncManager {
 
         // Write config to EFI
         efi::write_config_with_device(&config, Some(&self.efi_context.device))?;
-        log!("[BlueVein] Successfully synced to EFI (device: {})", self.efi_context.device);
+        log!(
+            "[BlueVein] Successfully synced to EFI (device: {})",
+            self.efi_context.display_name()
+        );
 
         Ok(())
     }
@@ -407,12 +427,16 @@ impl SyncManager {
                 log!(
                     "[BlueVein] ✓ Successfully updated EFI config for device {} (device: {})",
                     device_mac,
-                    self.efi_context.device
+                    self.efi_context.display_name()
                 );
 
                 // Verify write
-                if let Ok(verify_config) = efi::read_config_with_device(Some(&self.efi_context.device)) {
-                    if let Some(stored_device) = verify_config.get_device(adapter_mac, &device.mac_address) {
+                if let Ok(verify_config) =
+                    efi::read_config_with_device(Some(&self.efi_context.device))
+                {
+                    if let Some(stored_device) =
+                        verify_config.get_device(adapter_mac, &device.mac_address)
+                    {
                         log!(
                             "[BlueVein] ✓ Verified: Device {} is in EFI config",
                             device_mac
@@ -421,7 +445,10 @@ impl SyncManager {
                             log!("[BlueVein] ✗ Warning: Device keys differ after write!");
                         }
                     } else {
-                        log!("[BlueVein] ✗ Warning: Device {} NOT found in EFI config after write!", device_mac);
+                        log!(
+                            "[BlueVein] ✗ Warning: Device {} NOT found in EFI config after write!",
+                            device_mac
+                        );
                     }
                 }
 

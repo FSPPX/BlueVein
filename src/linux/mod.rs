@@ -4,7 +4,6 @@ mod monitor;
 use crate::efi::EfiContext;
 use crate::log;
 use crate::sync::SyncManager;
-use std::env;
 use std::error::Error;
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -25,10 +24,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 async fn run_service() -> Result<(), Box<dyn Error>> {
     let bt_manager = Box::new(bluetooth::LinuxBluetoothManager::new()?);
 
-    // Get EFI device from environment variable
-    // If not specified, will try mounted EFI first, then fail
-    let efi_device = env::var("BLUEVEIN_EFI_DEVICE").ok();
-    let efi_context = EfiContext::new(efi_device.unwrap_or_default());
+    let efi_context = EfiContext::from_env();
+    efi_context.validate()?;
 
     let mut sync_manager = SyncManager::new(bt_manager, efi_context);
 

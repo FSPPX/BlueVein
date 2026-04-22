@@ -1,16 +1,15 @@
 use crate::bluetooth::{
     mac_to_windows_format, normalize_mac, validate_bluetooth_key, windows_format_to_mac,
-    BluetoothDevice, BluetoothManager, ClassicKeys, CsrkKey, LeLongTermKey, LeKeys,
+    BluetoothDevice, BluetoothManager, ClassicKeys, CsrkKey, LeKeys, LeLongTermKey,
 };
 use crate::log;
 use std::error::Error;
-use winreg::enums::*;
 use winreg::enums::RegDisposition;
+use winreg::enums::*;
 use winreg::RegKey;
 
 const BLUETOOTH_REG_PATH: &str = r"SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Keys";
-const BLUETOOTH_LE_REG_PATH: &str =
-    r"SYSTEM\CurrentControlSet\Services\BTHLE\Parameters\Keys";
+const BLUETOOTH_LE_REG_PATH: &str = r"SYSTEM\CurrentControlSet\Services\BTHLE\Parameters\Keys";
 
 pub struct WindowsBluetoothManager {
     hklm: RegKey,
@@ -47,8 +46,11 @@ impl WindowsBluetoothManager {
             Ok(keys) => Ok(keys),
             Err(_) => {
                 // Try to create the path if it doesn't exist
-                log!("[BlueVein] LE registry path doesn't exist, attempting to create: {}", BLUETOOTH_LE_REG_PATH);
-                
+                log!(
+                    "[BlueVein] LE registry path doesn't exist, attempting to create: {}",
+                    BLUETOOTH_LE_REG_PATH
+                );
+
                 self.hklm
                     .create_subkey(BLUETOOTH_LE_REG_PATH)
                     .map(|(key, _)| key)
@@ -149,7 +151,10 @@ impl WindowsBluetoothManager {
                     .get_value::<u32, _>("KeyLength")
                     .ok()
                     .map(|v| v as u8);
-                let ediv = device_key.get_value::<u32, _>("EDIV").ok().map(|v| v as u16);
+                let ediv = device_key
+                    .get_value::<u32, _>("EDIV")
+                    .ok()
+                    .map(|v| v as u16);
                 let rand = device_key.get_value::<u64, _>("ERand").ok();
 
                 le_keys.ltk = Some(LeLongTermKey {
@@ -282,7 +287,7 @@ impl WindowsBluetoothManager {
     }
 
     /// Write LE device keys
-    /// 
+    ///
     /// This function ensures the full registry path exists and creates it if needed.
     /// Windows only creates BTHLE registry entries when devices connect via LE,
     /// so we need to create the structure manually when syncing from another OS.
@@ -294,38 +299,45 @@ impl WindowsBluetoothManager {
     ) -> Result<(), Box<dyn Error>> {
         // Ensure base LE registry path exists (create if needed)
         let bt_le_keys = self.ensure_bluetooth_le_keys()?;
-        
+
         let adapter_key_name = mac_to_windows_format(adapter_mac);
         let device_key_name = mac_to_windows_format(device_mac);
 
         // Create adapter key if it doesn't exist
-        let (adapter_key, adapter_disp) = bt_le_keys
-            .create_subkey(&adapter_key_name)
-            .map_err(|e| {
+        let (adapter_key, adapter_disp) =
+            bt_le_keys.create_subkey(&adapter_key_name).map_err(|e| {
                 format!(
                     "Failed to create adapter key {} in LE registry: {}",
                     adapter_key_name, e
                 )
             })?;
-        
+
         if adapter_disp == RegDisposition::REG_CREATED_NEW_KEY {
-            log!("[BlueVein]   Created new adapter key in LE registry: {}", adapter_key_name);
+            log!(
+                "[BlueVein]   Created new adapter key in LE registry: {}",
+                adapter_key_name
+            );
         }
 
         // Create device key - this is where LE keys are stored
-        let (device_key, device_disp) = adapter_key
-            .create_subkey(&device_key_name)
-            .map_err(|e| {
+        let (device_key, device_disp) =
+            adapter_key.create_subkey(&device_key_name).map_err(|e| {
                 format!(
                     "Failed to create device key {} in LE registry: {}",
                     device_key_name, e
                 )
             })?;
-        
+
         if device_disp == RegDisposition::REG_CREATED_NEW_KEY {
-            log!("[BlueVein]   Created new device key in LE registry: {}", device_key_name);
+            log!(
+                "[BlueVein]   Created new device key in LE registry: {}",
+                device_key_name
+            );
         } else {
-            log!("[BlueVein]   Updating existing device key in LE registry: {}", device_key_name);
+            log!(
+                "[BlueVein]   Updating existing device key in LE registry: {}",
+                device_key_name
+            );
         }
 
         // Write LTK
@@ -387,8 +399,8 @@ impl WindowsBluetoothManager {
             // Validate CSRK before writing
             validate_bluetooth_key(&csrk_local.key, "CSRK (Local)")?;
 
-            let csrk_bytes = hex::decode(&csrk_local.key)
-                .map_err(|e| format!("Invalid CSRK format: {}", e))?;
+            let csrk_bytes =
+                hex::decode(&csrk_local.key).map_err(|e| format!("Invalid CSRK format: {}", e))?;
 
             device_key.set_raw_value(
                 "CSRK",
@@ -463,7 +475,8 @@ impl BluetoothManager for WindowsBluetoothManager {
                 for device in adapter_key.enum_values() {
                     if let Ok((device_name, _)) = device {
                         let device_mac = windows_format_to_mac(&device_name);
-                        if let Ok(Some(classic)) = self.read_classic_device(adapter_mac, &device_mac)
+                        if let Ok(Some(classic)) =
+                            self.read_classic_device(adapter_mac, &device_mac)
                         {
                             devices_map
                                 .entry(device_mac.clone())
@@ -542,11 +555,7 @@ impl BluetoothManager for WindowsBluetoothManager {
         Ok(())
     }
 
-    fn remove_device(
-        &mut self,
-        adapter_mac: &str,
-        device_mac: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    fn remove_device(&mut self, adapter_mac: &str, device_mac: &str) -> Result<(), Box<dyn Error>> {
         let adapter_key_name = mac_to_windows_format(adapter_mac);
         let device_key_name = mac_to_windows_format(device_mac);
 
@@ -559,8 +568,7 @@ impl BluetoothManager for WindowsBluetoothManager {
 
         // Remove from LE registry
         if let Ok(bt_le_keys) = self.open_bluetooth_le_keys() {
-            if let Ok(adapter_key) =
-                bt_le_keys.open_subkey_with_flags(&adapter_key_name, KEY_WRITE)
+            if let Ok(adapter_key) = bt_le_keys.open_subkey_with_flags(&adapter_key_name, KEY_WRITE)
             {
                 let _ = adapter_key.delete_subkey(&device_key_name);
             }

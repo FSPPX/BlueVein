@@ -184,11 +184,11 @@ fn add_device_watches(
 }
 
 /// Check if info file contains pairing keys (Classic LinkKey or LE keys)
-/// 
+///
 /// This function detects both:
 /// - Classic Bluetooth: [LinkKey] section with Key=
 /// - Bluetooth LE: [LongTermKey], [PeripheralLongTermKey], or [IdentityResolvingKey]
-/// 
+///
 /// Returns true if ANY pairing key is found, indicating the device has been paired.
 fn has_pairing_keys(info_path: &PathBuf) -> bool {
     if let Ok(content) = fs::read_to_string(info_path) {
@@ -197,17 +197,22 @@ fn has_pairing_keys(info_path: &PathBuf) -> bool {
 
         for line in lines {
             let trimmed = line.trim();
-            
+
             // Track current section
             if trimmed.starts_with('[') && trimmed.ends_with(']') {
                 current_section = trimmed.to_string();
             } else if trimmed.starts_with("Key=") {
                 // Check if we're in a pairing key section
                 match current_section.as_str() {
-                    "[LinkKey]" | "[LongTermKey]" | "[PeripheralLongTermKey]" | "[IdentityResolvingKey]" | "[SlaveLongTermKey]" => {
+                    "[LinkKey]"
+                    | "[LongTermKey]"
+                    | "[PeripheralLongTermKey]"
+                    | "[IdentityResolvingKey]"
+                    | "[SlaveLongTermKey]" => {
                         let key_value = trimmed.strip_prefix("Key=").unwrap_or("");
                         // Validate key is not empty and has valid hex format (32 chars = 128-bit)
-                        if key_value.len() == 32 && key_value.chars().all(|c| c.is_ascii_hexdigit()) {
+                        if key_value.len() == 32 && key_value.chars().all(|c| c.is_ascii_hexdigit())
+                        {
                             return true;
                         }
                     }

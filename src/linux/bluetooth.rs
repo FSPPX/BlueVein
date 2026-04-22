@@ -1,6 +1,6 @@
 use crate::bluetooth::{
-    normalize_mac, validate_bluetooth_key, BluetoothDevice, BluetoothManager, ClassicKeys,
-    CsrkKey, LeLongTermKey, LeKeys,
+    normalize_mac, validate_bluetooth_key, BluetoothDevice, BluetoothManager, ClassicKeys, CsrkKey,
+    LeKeys, LeLongTermKey,
 };
 use crate::log;
 use std::collections::HashMap;
@@ -493,13 +493,8 @@ impl BluetoothManager for LinuxBluetoothManager {
         Self::write_device_keys(adapter_mac, device)
     }
 
-    fn remove_device(
-        &mut self,
-        adapter_mac: &str,
-        device_mac: &str,
-    ) -> Result<(), Box<dyn Error>> {
-        let device_path =
-            Self::get_adapter_info_path(adapter_mac).join(normalize_mac(device_mac));
+    fn remove_device(&mut self, adapter_mac: &str, device_mac: &str) -> Result<(), Box<dyn Error>> {
+        let device_path = Self::get_adapter_info_path(adapter_mac).join(normalize_mac(device_mac));
 
         if device_path.exists() {
             fs::remove_dir_all(&device_path)
