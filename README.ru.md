@@ -180,18 +180,25 @@ Get-Service BlueVeinService
 > По умолчанию BlueVein автоматически определяет EFI-раздел. Для указания конкретного устройства используйте переменную окружения `BLUEVEIN_EFI_DEVICE`:
 > ```powershell
 > # Для ручного запуска
-> $env:BLUEVEIN_EFI_DEVICE="HD(1,800,100000,...)"
+> $env:BLUEVEIN_EFI_DEVICE="\\.\PhysicalDrive0"
 > .\bluevein.exe
 >
 > # Для установки сервиса с переменной окружения
-> [System.Environment]::SetEnvironmentVariable('BLUEVEIN_EFI_DEVICE', 'HD(1,800,100000,...)', 'Machine')
+> [System.Environment]::SetEnvironmentVariable('BLUEVEIN_EFI_DEVICE', '\\.\PhysicalDrive0', 'Machine')
 > .\bluevein.exe install
 > .\bluevein.exe start
 > ```
 >
 > **Формат устройства Windows:**
-> - `HD(1,800,100000,...)` — Device Path из UEFI
-> - Можно получить через `mountvol` или в логах BlueVein
+> - `\\.\PhysicalDrive0` — Физический диск (наиболее частый случай)
+> - `\\.\Harddisk0Partition1` — Конкретный раздел
+> - `\\?\Volume{GUID}\` — Путь через GUID тома
+>
+> **Как найти своё EFI-устройство:**
+> ```powershell
+> # Список всех разделов и поиск EFI
+> Get-Partition | Where-Object {$_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'}
+> ```
 
 ## ⌨️ Управление сервисом
 
