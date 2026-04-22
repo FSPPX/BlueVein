@@ -124,6 +124,22 @@ sudo systemctl enable --now bluevein
 sudo systemctl status bluevein
 ```
 
+> [!TIP]
+> **Specifying EFI Device:**
+> By default, BlueVein automatically detects the EFI partition. If you have multiple EFI partitions or a non-standard configuration, use the `BLUEVEIN_EFI_DEVICE` environment variable:
+> ```bash
+> # For systemd service (edit /etc/systemd/system/bluevein.service)
+> Environment="BLUEVEIN_EFI_DEVICE=/dev/nvme0n1p1"
+>
+> # Or for manual launch
+> sudo BLUEVEIN_EFI_DEVICE=/dev/nvme0n1p1 bluevein
+> ```
+>
+> **Device examples:**
+> - `/dev/nvme0n1p1` — NVMe SSD
+> - `/dev/sda1` — SATA disk
+> - `/dev/vda1` — Virtual machine
+
 ### Windows
 
 #### Option 1: Pre-built release
@@ -158,6 +174,24 @@ cd target\release
 # 4. Verify
 Get-Service BlueVeinService
 ```
+
+> [!TIP]
+> **Specifying EFI Device (Windows):**
+> By default, BlueVein automatically detects the EFI partition. To specify a particular device, use the `BLUEVEIN_EFI_DEVICE` environment variable:
+> ```powershell
+> # For manual launch
+> $env:BLUEVEIN_EFI_DEVICE="HD(1,800,100000,...)"
+> .\bluevein.exe
+>
+> # To set machine-wide environment variable for the service
+> [System.Environment]::SetEnvironmentVariable('BLUEVEIN_EFI_DEVICE', 'HD(1,800,100000,...)', 'Machine')
+> .\bluevein.exe install
+> .\bluevein.exe start
+> ```
+>
+> **Windows device format:**
+> - `HD(1,800,100000,...)` — Device Path from UEFI
+> - Can be obtained via `mountvol` or from BlueVein logs
 
 ## ⌨️ Service Management
 
@@ -270,6 +304,21 @@ BlueVein fully supports Bluetooth Low Energy devices with all key types:
 | **IRK** | Identity Resolving Key — for privacy (random MAC) | ✅ Full |
 | **CSRK** | Connection Signature Resolving Key — for data signing | ✅ Full |
 | **AddressType** | Address type (public/random) | ✅ Full |
+
+### EFI Access Architecture
+
+BlueVein uses **`EfiContext`** to manage EFI partition access:
+
+- **Automatic detection:** By default, BlueVein automatically finds the EFI partition at standard mount points (`/boot/efi`, `/efi`, `/boot` on Linux)
+- **Manual specification:** Use the `BLUEVEIN_EFI_DEVICE` environment variable to explicitly specify a device
+- **Two-level access:**
+  1. First checks mounted EFI partition (faster, no cache issues)
+  2. If not found — uses direct access via `fat32-raw`
+
+**Benefits of this approach:**
+- Flexibility in complex configurations (multiple EFI partitions, RAID, LVM)
+- Backward compatibility (works without specifying device)
+- Cross-platform (Linux and Windows use a unified interface)
 
 ### Architecture Decisions
 

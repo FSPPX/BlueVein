@@ -35,12 +35,19 @@ impl BlueVeinConfig {
     }
 
     /// Get devices for a specific adapter
-    pub fn get_adapter_devices(&self, adapter_mac: &str) -> Option<&HashMap<String, BluetoothDevice>> {
+    pub fn get_adapter_devices(
+        &self,
+        adapter_mac: &str,
+    ) -> Option<&HashMap<String, BluetoothDevice>> {
         self.adapters.get(adapter_mac).map(|config| &config.devices)
     }
 
     /// Set devices for a specific adapter
-    pub fn set_adapter_devices(&mut self, adapter_mac: String, devices: HashMap<String, BluetoothDevice>) {
+    pub fn set_adapter_devices(
+        &mut self,
+        adapter_mac: String,
+        devices: HashMap<String, BluetoothDevice>,
+    ) {
         self.adapters.insert(adapter_mac, DeviceConfig { devices });
     }
 
@@ -91,13 +98,13 @@ mod tests {
     #[test]
     fn test_update_device() {
         let mut config = BlueVeinConfig::new();
-        let device = BluetoothDevice::classic(
-            "AA:BB:CC:DD:EE:FF".to_string(),
-            "KEY123".to_string(),
-        );
+        let device =
+            BluetoothDevice::classic("AA:BB:CC:DD:EE:FF".to_string(), "KEY123".to_string());
         config.update_device("00:11:22:33:44:55".to_string(), device);
 
-        let stored = config.get_device("00:11:22:33:44:55", "AA:BB:CC:DD:EE:FF").unwrap();
+        let stored = config
+            .get_device("00:11:22:33:44:55", "AA:BB:CC:DD:EE:FF")
+            .unwrap();
         assert_eq!(stored.classic.as_ref().unwrap().link_key, "KEY123");
     }
 }

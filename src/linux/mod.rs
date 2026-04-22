@@ -1,6 +1,7 @@
 mod bluetooth;
 mod monitor;
 
+use crate::efi::EfiContext;
 use crate::log;
 use crate::sync::SyncManager;
 use std::error::Error;
@@ -22,7 +23,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
 async fn run_service() -> Result<(), Box<dyn Error>> {
     let bt_manager = Box::new(bluetooth::LinuxBluetoothManager::new()?);
-    let mut sync_manager = SyncManager::new(bt_manager);
+
+    let efi_context = EfiContext::from_env();
+    efi_context.validate()?;
+
+    let mut sync_manager = SyncManager::new(bt_manager, efi_context);
 
     log!("[BlueVein] Performing initial bidirectional sync...");
     // Use bidirectional sync to properly merge EFI and system state

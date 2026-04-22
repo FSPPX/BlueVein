@@ -1,6 +1,7 @@
 use crate::config::BlueVeinConfig;
 use crate::log;
 use fat32_raw::Fat32Volume;
+use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -32,7 +33,54 @@ const CONFIG_FILENAME: &str = "bluevein.json";
 
 // Common EFI mount points
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 const EFI_MOUNT_POINTS: &[&str] = &["/boot/efi", "/efi", "/boot"];
+
+/// EFI context with device path
+pub struct EfiContext {
+    pub device: String,
+}
+
+impl EfiContext {
+    pub fn new(device: impl Into<String>) -> Self {
+        Self {
+            device: device.into(),
+        }
+    }
+
+    pub fn from_env() -> Self {
+        env::var("BLUEVEIN_EFI_DEVICE")
+            .ok()
+            .map(Self::new)
+            .unwrap_or_default()
+    }
+
+    pub fn display_name(&self) -> &str {
+        if self.device.is_empty() {
+            "auto-detected"
+        } else {
+            &self.device
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), EfiError> {
+        if self.device.is_empty() {
+            return Ok(());
+        }
+
+        Fat32Volume::open_esp(Some(&self.device))
+            .map_err(|e| EfiError::ReadError(format!("Failed to open ESP partition: {}", e)))?
+            .ok_or_else(|| EfiError::ReadError("ESP partition not found".to_string()))?;
+
+        Ok(())
+    }
+}
+
+impl Default for EfiContext {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 /// Find mounted EFI partition path
 fn find_mounted_efi() -> Option<String> {
@@ -64,33 +112,53 @@ fn find_mounted_efi() -> Option<String> {
     None
 }
 
-/// Read BlueVein configuration from EFI partition
+/// Read BlueVein configuration from EFI partition using default device
+#[allow(dead_code)]
 pub fn read_config() -> Result<BlueVeinConfig, EfiError> {
-    // Try mounted filesystem first (faster and no cache issues)
-    if let Some(mount_point) = find_mounted_efi() {
-        let config_path = Path::new(&mount_point).join(CONFIG_FILENAME);
+    read_config_with_device(None)
+}
 
-        if config_path.exists() {
-            match fs::read_to_string(&config_path) {
-                Ok(json_str) => {
-                    return BlueVeinConfig::from_json(&json_str)
-                        .map_err(|e| EfiError::ParseError(e.to_string()));
+/// Read BlueVein configuration from EFI partition
+///
+/// # Arguments
+/// * `device` - If Some, use direct disk access with specified device
+///              If None, try mounted EFI first, then fallback to default device
+pub fn read_config_with_device(device: Option<&str>) -> Result<BlueVeinConfig, EfiError> {
+    // If device is explicitly specified, skip mounted filesystem check
+    if device.is_none() {
+        // Try mounted filesystem first (faster and no cache issues)
+        if let Some(mount_point) = find_mounted_efi() {
+            let config_path = Path::new(&mount_point).join(CONFIG_FILENAME);
+
+            if config_path.exists() {
+                match fs::read_to_string(&config_path) {
+                    Ok(json_str) => {
+                        return BlueVeinConfig::from_json(&json_str)
+                            .map_err(|e| EfiError::ParseError(e.to_string()));
+                    }
+                    Err(e) => {
+                        log!("[BlueVein] Warning: Failed to read from mounted EFI ({}), trying direct access", e);
+                        // Fall through to fat32-raw
+                    }
                 }
-                Err(e) => {
-                    log!("[BlueVein] Warning: Failed to read from mounted EFI ({}), trying direct access", e);
-                    // Fall through to fat32-raw
-                }
+            } else {
+                // File doesn't exist
+                return Err(EfiError::NotFound);
             }
-        } else {
-            // File doesn't exist
-            return Err(EfiError::NotFound);
         }
     }
 
+    // Use specified device or empty (will fail if not mounted and no device specified)
+    let device_path = device.unwrap_or("");
+
     // Fallback to direct disk access via fat32-raw
-    let mut volume = Fat32Volume::open_esp(None::<&str>)
-        .map_err(|e| EfiError::ReadError(format!("Failed to open ESP partition: {}", e)))?
-        .ok_or_else(|| EfiError::ReadError("ESP partition not found".to_string()))?;
+    let mut volume = Fat32Volume::open_esp(if device_path.is_empty() {
+        None
+    } else {
+        Some(device_path)
+    })
+    .map_err(|e| EfiError::ReadError(format!("Failed to open ESP partition: {}", e)))?
+    .ok_or_else(|| EfiError::ReadError("ESP partition not found".to_string()))?;
 
     match volume.read_file(CONFIG_FILENAME) {
         Ok(Some(data)) => {
@@ -108,49 +176,71 @@ pub fn read_config() -> Result<BlueVeinConfig, EfiError> {
     }
 }
 
-/// Write BlueVein configuration to EFI partition
+/// Write BlueVein configuration to EFI partition using default device
+#[allow(dead_code)]
 pub fn write_config(config: &BlueVeinConfig) -> Result<(), EfiError> {
+    write_config_with_device(config, None)
+}
+
+/// Write BlueVein configuration to EFI partition
+///
+/// # Arguments
+/// * `device` - If Some, use direct disk access with specified device
+///              If None, try mounted filesystem first, then fallback to default device
+pub fn write_config_with_device(
+    config: &BlueVeinConfig,
+    device: Option<&str>,
+) -> Result<(), EfiError> {
     // Serialize config to JSON
     let json = config
         .to_json()
         .map_err(|e| EfiError::WriteError(format!("Failed to serialize config: {}", e)))?;
 
-    // Try mounted filesystem first (preferred method - no cache issues)
-    if let Some(mount_point) = find_mounted_efi() {
-        let config_path = Path::new(&mount_point).join(CONFIG_FILENAME);
+    // If device is not explicitly specified, try mounted filesystem first
+    if device.is_none() {
+        if let Some(mount_point) = find_mounted_efi() {
+            let config_path = Path::new(&mount_point).join(CONFIG_FILENAME);
 
-        match fs::write(&config_path, &json) {
-            Ok(_) => {
-                // Sync to ensure data is flushed to disk
-                #[cfg(target_os = "linux")]
-                {
-                    unsafe {
-                        libc::sync();
+            match fs::write(&config_path, &json) {
+                Ok(_) => {
+                    // Sync to ensure data is flushed to disk
+                    #[cfg(target_os = "linux")]
+                    {
+                        unsafe {
+                            libc::sync();
+                        }
                     }
-                }
 
-                log!(
-                    "[BlueVein] Wrote config via mounted filesystem: {}",
-                    config_path.display()
-                );
-                return Ok(());
-            }
-            Err(e) => {
-                log!(
-                    "[BlueVein] Warning: Failed to write to mounted EFI ({}), trying direct access",
-                    e
-                );
-                // Fall through to fat32-raw
+                    log!(
+                        "[BlueVein] Wrote config via mounted filesystem: {}",
+                        config_path.display()
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    log!(
+                        "[BlueVein] Warning: Failed to write to mounted EFI ({}), trying direct access",
+                        e
+                    );
+                    // Fall through to fat32-raw
+                }
             }
         }
     }
 
+    // Use specified device or empty (will fail if not mounted and no device specified)
+    let device_path = device.unwrap_or("");
+
     // Fallback to direct disk access via fat32-raw
     log!("[BlueVein] Using direct disk access via fat32-raw");
 
-    let mut volume = Fat32Volume::open_esp(None::<&str>)
-        .map_err(|e| EfiError::WriteError(format!("Failed to open ESP partition: {}", e)))?
-        .ok_or_else(|| EfiError::WriteError("ESP partition not found".to_string()))?;
+    let mut volume = Fat32Volume::open_esp(if device_path.is_empty() {
+        None
+    } else {
+        Some(device_path)
+    })
+    .map_err(|e| EfiError::WriteError(format!("Failed to open ESP partition: {}", e)))?
+    .ok_or_else(|| EfiError::WriteError("ESP partition not found".to_string()))?;
 
     // Check if file exists
     match volume.read_file(CONFIG_FILENAME) {

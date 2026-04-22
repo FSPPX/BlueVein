@@ -33,6 +33,7 @@ pub struct CsrkKey {
 }
 
 impl CsrkKey {
+    #[allow(dead_code)]
     pub fn new(key: String) -> Self {
         Self {
             key,
@@ -74,6 +75,7 @@ fn default_link_key_type() -> u8 {
 }
 
 impl ClassicKeys {
+    #[allow(dead_code)]
     pub fn new(link_key: String) -> Self {
         Self {
             link_key,
@@ -95,6 +97,7 @@ pub struct BluetoothDevice {
 
 impl BluetoothDevice {
     /// Create a classic Bluetooth device
+    #[allow(dead_code)]
     pub fn classic(mac_address: String, link_key: String) -> Self {
         Self {
             mac_address,
@@ -104,6 +107,7 @@ impl BluetoothDevice {
     }
 
     /// Create a BLE device with LTK
+    #[allow(dead_code)]
     pub fn le_with_ltk(mac_address: String, ltk: LeLongTermKey) -> Self {
         Self {
             mac_address,
@@ -138,48 +142,52 @@ impl BluetoothDevice {
     fn merge_le_keys(le1: &LeKeys, le2: &LeKeys) -> LeKeys {
         LeKeys {
             ltk: le2.ltk.clone().or_else(|| le1.ltk.clone()),
-            peripheral_ltk: le2.peripheral_ltk.clone().or_else(|| le1.peripheral_ltk.clone()),
+            peripheral_ltk: le2
+                .peripheral_ltk
+                .clone()
+                .or_else(|| le1.peripheral_ltk.clone()),
             irk: le2.irk.clone().or_else(|| le1.irk.clone()),
             csrk_local: le2.csrk_local.clone().or_else(|| le1.csrk_local.clone()),
             csrk_remote: le2.csrk_remote.clone().or_else(|| le1.csrk_remote.clone()),
-            address_type: le2.address_type.clone().or_else(|| le1.address_type.clone()),
+            address_type: le2
+                .address_type
+                .clone()
+                .or_else(|| le1.address_type.clone()),
         }
     }
 }
 
 /// Validate Bluetooth key length
-/// 
+///
 /// Per Bluetooth Core Specification:
 /// - LTK, IRK, CSRK: 16 bytes (128 bits) = 32 hex characters
 /// - LinkKey (Classic): 16 bytes = 32 hex characters
-/// 
+///
 /// # Arguments
 /// * `key` - Hex string to validate
 /// * `key_name` - Name of the key (for error messages)
-/// 
+///
 /// # Returns
 /// * `Ok(())` if key is valid
 /// * `Err` with descriptive message if invalid
 pub fn validate_bluetooth_key(key: &str, key_name: &str) -> Result<(), Box<dyn Error>> {
     const EXPECTED_LENGTH: usize = 32; // 16 bytes = 32 hex chars
-    
+
     // Check if all characters are valid hex
     if !key.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!(
-            "{} contains non-hexadecimal characters: {}",
-            key_name, key
-        ).into());
+        return Err(format!("{} contains non-hexadecimal characters: {}", key_name, key).into());
     }
-    
+
     // Check length
     let actual_length = key.len();
     if actual_length != EXPECTED_LENGTH {
         return Err(format!(
             "{} has invalid length: expected {} hex characters (16 bytes), got {} characters",
             key_name, EXPECTED_LENGTH, actual_length
-        ).into());
+        )
+        .into());
     }
-    
+
     Ok(())
 }
 
@@ -275,7 +283,7 @@ mod tests {
         assert!(device.classic.is_some());
         assert!(device.le.is_none());
         assert!(device.has_keys());
-        
+
         let classic = device.classic.unwrap();
         assert_eq!(classic.key_type, 4);
         assert_eq!(classic.pin_length, 0);
@@ -329,7 +337,7 @@ mod tests {
             rand: Some(12345),
         };
         let device2 = BluetoothDevice::le_with_ltk("AA:BB:CC:DD:EE:FF".to_string(), ltk);
-        
+
         let merged = device1.merge_with(&device2);
         assert!(merged.classic.is_some());
         assert!(merged.le.is_some());
